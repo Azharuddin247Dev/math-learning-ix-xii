@@ -106,6 +106,69 @@ class ChapterLoader {
         return chapterData.test || [];
     }
 
+    // Get broad questions for a chapter from separate file
+    async getBroadQuestions(classNum, chapterId) {
+        const key = `class${classNum}chapter${chapterId}broad`;
+        
+        // Return cached data if already loaded
+        if (this.loadedChapters.has(key)) {
+            return this.loadedChapters.get(key);
+        }
+
+        // Return existing promise if already loading
+        if (this.loadingPromises.has(key)) {
+            return this.loadingPromises.get(key);
+        }
+
+        // Create loading promise for broad questions
+        const loadingPromise = this.loadBroadFile(classNum, chapterId);
+        this.loadingPromises.set(key, loadingPromise);
+
+        try {
+            const broadData = await loadingPromise;
+            this.loadedChapters.set(key, broadData);
+            this.loadingPromises.delete(key);
+            return broadData;
+        } catch (error) {
+            this.loadingPromises.delete(key);
+            console.warn(`Broad questions not found for class ${classNum}, chapter ${chapterId}`);
+            return [];
+        }
+    }
+
+    // Load broad questions file
+    async loadBroadFile(classNum, chapterId) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = `data/class${classNum}/chapter${chapterId}-broad.js`;
+            console.log(`Loading broad questions from: ${script.src}`);
+            
+            script.onload = () => {
+                setTimeout(() => {
+                    const broadData = window[`class${classNum}Chapter${chapterId}Broad`];
+                    console.log(`Looking for variable: class${classNum}Chapter${chapterId}Broad`);
+                    console.log('Found data:', broadData);
+                    if (broadData && broadData.questions) {
+                        console.log(`Loaded ${broadData.questions.length} broad questions`);
+                        resolve(broadData.questions);
+                    } else {
+                        console.error('Broad data structure:', broadData);
+                        reject(new Error(`Broad questions not found in file`));
+                    }
+                    document.head.removeChild(script);
+                }, 100);
+            };
+            
+            script.onerror = (error) => {
+                console.error('Failed to load broad questions file:', script.src, error);
+                document.head.removeChild(script);
+                reject(new Error(`Failed to load broad questions file: ${script.src}`));
+            };
+            
+            document.head.appendChild(script);
+        });
+    }
+
     // Check if chapter file exists
     async chapterExists(classNum, chapterId) {
         try {
