@@ -9,7 +9,8 @@ let userData = {
     testQuestions: [],
     currentTestQuestion: 0,
     testAnswers: [],
-    testStartTime: null
+    testStartTime: null,
+    questionType: 'short'
 };
 
 // Class chapters data is now loaded from external file (chapters.js)
@@ -80,13 +81,72 @@ function selectChapter(chapter) {
 }
 
 function selectType(type) {
+    userData.questionType = type;
+    
     if (type === 'broad') {
-        document.getElementById('coming-soon-modal').style.display = 'flex';
+        loadBroadContent();
         return;
     }
     
-    // Load reading content for short questions
     loadReadingContent();
+}
+
+function loadBroadContent() {
+    document.getElementById('type-container').style.display = 'none';
+    document.getElementById('reading-container').style.display = 'block';
+    updateUserDisplay();
+    
+    document.getElementById('reading-title').textContent = 
+        `Broad Questions: ${userData.selectedChapter.name}`;
+    
+    userData.currentPage = 1;
+    displayCurrentBroadPage();
+}
+
+async function displayCurrentBroadPage() {
+    const content = document.getElementById('questions-content');
+    
+    try {
+        const chapterData = await window.chapterLoader.loadChapter(userData.selectedClass, userData.selectedChapter.id);
+        const broadQuestions = chapterData.broad || [];
+        
+        if (broadQuestions.length === 0) {
+            content.innerHTML = '<div style="text-align: center; padding: 40px;"><h3>📝 Broad Questions</h3><p style="color: #1877f2; font-size: 16px; margin: 20px 0;">🕰️ Broad questions will be added soon!</p><p style="color: #65676b;">We are working on adding detailed problem-solving questions for this chapter.</p><button onclick="goBackToChapters()" style="margin-top: 20px;">Back to Chapters</button></div>';
+            return;
+        }
+        
+        const startIndex = (userData.currentPage - 1) * 3;
+        const endIndex = startIndex + 3;
+        const pageQuestions = broadQuestions.slice(startIndex, endIndex);
+        
+        content.innerHTML = '';
+        
+        pageQuestions.forEach((item, index) => {
+            const questionDiv = document.createElement('div');
+            questionDiv.className = 'question-item';
+            questionDiv.innerHTML = `
+                <h4>Q${startIndex + index + 1}. ${item.question}</h4>
+                <div style="margin-top: 15px;">
+                    <p><strong>Answer:</strong></p>
+                    <p style="margin: 10px 0; line-height: 1.6; white-space: pre-line;">${item.answer}</p>
+                </div>
+            `;
+            content.appendChild(questionDiv);
+        });
+        
+        userData.totalPages = Math.ceil(broadQuestions.length / 3);
+        
+        document.getElementById('current-page').textContent = userData.currentPage;
+        document.getElementById('total-pages').textContent = userData.totalPages;
+        
+        document.getElementById('prev-btn').disabled = userData.currentPage === 1;
+        document.getElementById('next-btn').style.display = 
+            userData.currentPage === userData.totalPages ? 'none' : 'inline-block';
+        document.getElementById('test-btn').style.display = 
+            userData.currentPage === userData.totalPages ? 'inline-block' : 'none';
+    } catch (error) {
+        content.innerHTML = '<div style="text-align: center; padding: 40px;"><p>Error loading broad questions.</p><button onclick="goBackToChapters()" style="margin-top: 20px;">Back to Chapters</button></div>';
+    }
 }
 
 function loadReadingContent() {
@@ -104,11 +164,33 @@ function loadReadingContent() {
 }
 
 async function displayCurrentPage() {
+    const content = document.getElementById('questions-content');
+    
+    // Show beautiful loading animation
+    content.innerHTML = `
+        <div class="reading-loader">
+            <div class="loader-books">
+                <div class="book book1">📚</div>
+                <div class="book book2">📖</div>
+                <div class="book book3">📝</div>
+            </div>
+            <div class="loader-text">
+                <h3>✨ Loading Questions ✨</h3>
+                <p>Preparing your learning materials...</p>
+                <div class="progress-dots">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                </div>
+            </div>
+        </div>
+    `;
+    
     try {
         const questionsData = await getQuestionsForChapter(userData.selectedClass, userData.selectedChapter.id);
         
         if (questionsData.length === 0) {
-            document.getElementById('questions-content').innerHTML = 
+            content.innerHTML = 
                 '<div style="text-align: center; padding: 40px;"><p>Questions not available for this chapter. Please check back later.</p><button onclick="goBackToChapters()" style="margin-top: 20px;">Back to Chapters</button></div>';
             return;
         }
@@ -117,17 +199,19 @@ async function displayCurrentPage() {
         const endIndex = startIndex + 5;
         const pageQuestions = questionsData.slice(startIndex, endIndex);
         
-        const content = document.getElementById('questions-content');
+        // Clear content and add questions with staggered animation
         content.innerHTML = '';
         
         pageQuestions.forEach((item, index) => {
-            const questionDiv = document.createElement('div');
-            questionDiv.className = 'question-item';
-            questionDiv.innerHTML = `
-                <h4>Q${startIndex + index + 1}. ${item.question}</h4>
-                <p><strong>Answer:</strong> ${item.answer}</p>
-            `;
-            content.appendChild(questionDiv);
+            setTimeout(() => {
+                const questionDiv = document.createElement('div');
+                questionDiv.className = 'question-item question-appear';
+                questionDiv.innerHTML = `
+                    <h4>Q${startIndex + index + 1}. ${item.question}</h4>
+                    <p><strong>Answer:</strong> ${item.answer}</p>
+                `;
+                content.appendChild(questionDiv);
+            }, index * 150);
         });
         
         // Calculate total pages based on actual questions
@@ -144,7 +228,7 @@ async function displayCurrentPage() {
             userData.currentPage === userData.totalPages ? 'inline-block' : 'none';
     } catch (error) {
         console.error('Error loading questions:', error);
-        document.getElementById('questions-content').innerHTML = 
+        content.innerHTML = 
             `<div style="text-align: center; padding: 40px;">
                 <p><strong>Error loading chapter content:</strong></p>
                 <p>${error.message}</p>
@@ -157,27 +241,54 @@ async function displayCurrentPage() {
 function nextPage() {
     if (userData.currentPage < userData.totalPages) {
         userData.currentPage++;
-        displayCurrentPage();
+        // Check if we're in broad questions mode
+        const readingTitle = document.getElementById('reading-title').textContent;
+        if (readingTitle.includes('Broad Questions')) {
+            displayCurrentBroadPage();
+        } else {
+            displayCurrentPage();
+        }
     }
 }
 
 function prevPage() {
     if (userData.currentPage > 1) {
         userData.currentPage--;
-        displayCurrentPage();
+        // Check if we're in broad questions mode
+        const readingTitle = document.getElementById('reading-title').textContent;
+        if (readingTitle.includes('Broad Questions')) {
+            displayCurrentBroadPage();
+        } else {
+            displayCurrentPage();
+        }
     }
 }
 
 async function startTest() {
-    // Log test start activity
     logUserActivity('test_started', {
         class: userData.selectedClass,
         chapter: userData.selectedChapter.name,
-        chapterId: userData.selectedChapter.id
+        chapterId: userData.selectedChapter.id,
+        questionType: userData.questionType || 'short'
     });
     
     try {
-        const testQuestions = await getTestQuestionsForChapter(userData.selectedClass, userData.selectedChapter.id);
+        let testQuestions;
+        
+        if (userData.questionType === 'broad') {
+            const chapterData = await window.chapterLoader.loadChapter(userData.selectedClass, userData.selectedChapter.id);
+            testQuestions = chapterData.broadTest || [];
+            
+            if (testQuestions.length === 0) {
+                document.getElementById('reading-container').style.display = 'none';
+                document.getElementById('questions-content').innerHTML = 
+                    '<div style="text-align: center; padding: 40px;"><h3>📝 Broad Test</h3><p style="color: #1877f2; font-size: 16px; margin: 20px 0;">🕰️ Broad test questions will be added soon!</p><p style="color: #65676b;">We are working on adding test questions for broad problems.</p><button onclick="goBackToChapters()" style="margin-top: 20px;">Back to Chapters</button></div>';
+                document.getElementById('reading-container').style.display = 'block';
+                return;
+            }
+        } else {
+            testQuestions = await getTestQuestionsForChapter(userData.selectedClass, userData.selectedChapter.id);
+        }
         
         if (!testQuestions || testQuestions.length === 0) {
             document.getElementById('reading-container').style.display = 'none';
@@ -187,7 +298,6 @@ async function startTest() {
             return;
         }
         
-        // Randomly select up to 10 questions for test
         userData.testQuestions = testQuestions
             .sort(() => Math.random() - 0.5)
             .slice(0, Math.min(10, testQuestions.length));
@@ -257,9 +367,13 @@ function showTestResults() {
     document.getElementById('result-container').style.display = 'block';
     updateUserDisplay();
     
+    const questionType = userData.questionType === 'broad' ? 'Broad Questions' : 'Short Questions';
+    const typeIcon = userData.questionType === 'broad' ? '📝' : '⚡';
+    
     const resultInfo = document.getElementById('result-info');
     resultInfo.innerHTML = `
         <h3>Test Completed!</h3>
+        <p><strong>Category:</strong> ${typeIcon} ${questionType}</p>
         <p><strong>Score:</strong> ${score}/${userData.testQuestions.length}</p>
         <p><strong>Percentage:</strong> ${percentage}%</p>
         <p><strong>Grade:</strong> ${getGrade(percentage)}</p>
@@ -317,9 +431,7 @@ async function saveTestResult(score, percentage) {
         return;
     }
     
-    const emailPrefix = userData.email.split('@')[0];
-    const emailSuffix = emailPrefix.slice(-4);
-    const displayName = `${userData.name}${emailSuffix}`;
+    const displayName = getDisplayName();
     
     const now = new Date();
     const timeTaken = Date.now() - userData.testStartTime;
@@ -337,6 +449,7 @@ async function saveTestResult(score, percentage) {
         class: userData.selectedClass,
         chapter: userData.selectedChapter.name,
         chapterId: userData.selectedChapter.id,
+        questionType: userData.questionType || 'short',
         score: score,
         totalQuestions: userData.testQuestions.length,
         percentage: percentage,
@@ -351,7 +464,6 @@ async function saveTestResult(score, percentage) {
             hour12: true
         }),
         timeTaken: timeTaken,
-        // Enhanced performance tracking
         correctAnswers: correctAnswers,
         incorrectAnswers: userData.testQuestions.length - correctAnswers,
         averageTimePerQuestion: Math.round(timeTaken / userData.testQuestions.length / 1000),
@@ -475,7 +587,7 @@ async function showGlobalLeaderboard() {
                 <span class="user-name">${result.displayName || result.name || 'Anonymous'}${isCurrentUser ? ' (You)' : ''}</span>
             </div>
             <div class="test-info">
-                <span class="class-chapter">Class ${result.class} - ${result.chapter}</span>
+                <span class="class-chapter">Class ${result.class} - ${result.chapter} ${result.questionType === 'broad' ? '(📝 Broad)' : '(⚡ Short)'}</span>
                 <span class="score">${result.percentage}% (${result.score}/${result.totalQuestions})</span>
             </div>
             <div class="date-time">
@@ -661,6 +773,19 @@ function closeModal() {
 // Load reading questions using dynamic loader
 async function getQuestionsForChapter(classNum, chapterId) {
     return await window.chapterLoader.getReadingQuestions(classNum, chapterId);
+}
+
+// Load broad questions using dynamic loader
+async function getBroadQuestionsForChapter(classNum, chapterId) {
+    console.log(`getBroadQuestionsForChapter called with class ${classNum}, chapter ${chapterId}`);
+    try {
+        const result = await window.chapterLoader.getBroadQuestions(classNum, chapterId);
+        console.log('getBroadQuestionsForChapter result:', result);
+        return result;
+    } catch (error) {
+        console.error('Error in getBroadQuestionsForChapter:', error);
+        return [];
+    }
 }
 
 // Load test questions using dynamic loader
